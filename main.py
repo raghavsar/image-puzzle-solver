@@ -18,7 +18,7 @@ from src.utils.io import load_image, save_image
 from src.utils.piece import Piece
 from src.segmentation.extractor import extract_pieces
 from src.solver.grid_solver import solve_grid, compute_grid_dimensions
-from src.visualization.animator import create_animation, render_solved_image
+from src.visualization.animator import create_animation, render_solved_image, AnimationStyle
 
 
 def parse_args():
@@ -109,6 +109,14 @@ Examples:
     )
     
     parser.add_argument(
+        "--animation-style",
+        type=str,
+        choices=["simultaneous", "sequential", "wave"],
+        default="simultaneous",
+        help="Animation style: simultaneous (all at once), sequential (one by one), wave (staggered)"
+    )
+    
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose output"
@@ -164,9 +172,9 @@ def main():
         # Step 3: Solve puzzle
         if args.verbose:
             print(f"Solving puzzle ({grid_rows}x{grid_cols} grid)...")
-        solved_pieces = solve_grid(pieces, grid_rows, grid_cols)
+        solved_pieces = solve_grid(pieces, grid_rows, grid_cols, verbose=args.verbose)
         if args.verbose:
-            print("Puzzle solved!")
+            print("\nPuzzle solved!")
             for p in solved_pieces:
                 print(f"  Piece {p.id}: {p.initial_center} -> {p.solved_center}, "
                       f"rot: {p.initial_rotation} -> {p.solved_rotation}")
@@ -174,12 +182,22 @@ def main():
         # Step 4: Create animation
         if args.verbose:
             print(f"Creating animation: {args.output}")
+        
+        # Map animation style string to enum
+        style_map = {
+            "simultaneous": AnimationStyle.SIMULTANEOUS,
+            "sequential": AnimationStyle.SEQUENTIAL,
+            "wave": AnimationStyle.WAVE
+        }
+        animation_style = style_map.get(args.animation_style, AnimationStyle.SIMULTANEOUS)
+        
         output_path = create_animation(
             solved_pieces,
             output_path=args.output,
             canvas_size=canvas_size,
             fps=args.fps,
-            duration=args.duration
+            duration=args.duration,
+            style=animation_style
         )
         print(f"Animation saved: {output_path}")
         

@@ -2,6 +2,7 @@
 
 from typing import List, Tuple, Optional
 from pathlib import Path
+from enum import Enum
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
@@ -11,13 +12,21 @@ from matplotlib.patches import Rectangle
 from ..utils.piece import Piece
 
 
+class AnimationStyle(Enum):
+    """Animation style for piece movement."""
+    SIMULTANEOUS = "simultaneous"  # All pieces move at once
+    SEQUENTIAL = "sequential"       # Pieces move one at a time
+    WAVE = "wave"                   # Pieces move in waves (staggered start)
+
+
 def create_animation(
     pieces: List[Piece],
     output_path: str = "solution.mp4",
     canvas_size: Tuple[int, int] = (800, 800),
     fps: int = 30,
     duration: float = 5.0,
-    show_preview: bool = False
+    show_preview: bool = False,
+    style: AnimationStyle = AnimationStyle.SIMULTANEOUS
 ) -> str:
     """Create an MP4 animation showing pieces moving to their solved positions.
     
@@ -28,12 +37,14 @@ def create_animation(
         fps: Frames per second
         duration: Animation duration in seconds
         show_preview: Whether to show a preview window
+        style: Animation style (simultaneous, sequential, or wave)
         
     Returns:
         Path to the created MP4 file
     """
     num_frames = int(fps * duration)
     width, height = canvas_size
+    n_pieces = len(pieces)
     
     # Create figure and axis
     fig, ax = plt.subplots(1, 1, figsize=(8, 8))
@@ -79,13 +90,54 @@ def create_animation(
         t = t * t * (3 - 2 * t)  # Ease-in-out
         return start + diff * t
     
+    def get_piece_progress(frame: int, piece_idx: int) -> float:
+        """Get animation progress for a specific piece based on style.
+        
+        Returns a value in [0, 1] representing how far along the piece is
+        in its animation.
+        """
+        global_t = frame / (num_frames - 1) if num_frames > 1 else 1.0
+        
+        if style == AnimationStyle.SIMULTANEOUS:
+            return global_t
+        
+        elif style == AnimationStyle.SEQUENTIAL:
+            # Each piece takes 1/n of the total time
+            piece_duration = 1.0 / n_pieces
+            piece_start = piece_idx * piece_duration
+            piece_end = piece_start + piece_duration
+            
+            if global_t < piece_start:
+                return 0.0
+            elif global_t > piece_end:
+                return 1.0
+            else:
+                return (global_t - piece_start) / piece_duration
+        
+        elif style == AnimationStyle.WAVE:
+            # Pieces start at staggered times but overlap
+            overlap = 0.7  # How much each piece's animation overlaps with the next
+            piece_duration = 1.0 / (1 + (n_pieces - 1) * (1 - overlap))
+            piece_start = piece_idx * piece_duration * (1 - overlap)
+            piece_end = piece_start + piece_duration
+            
+            if global_t < piece_start:
+                return 0.0
+            elif global_t > piece_end:
+                return 1.0
+            else:
+                return (global_t - piece_start) / piece_duration
+        
+        return global_t
+    
     def update(frame: int):
         """Update function for animation."""
-        t = frame / (num_frames - 1) if num_frames > 1 else 1.0
-        
-        for piece, artist in zip(pieces, piece_artists):
+        for piece_idx, (piece, artist) in enumerate(zip(pieces, piece_artists)):
             if piece.solved_center is None:
                 continue
+            
+            # Get progress for this specific piece
+            t = get_piece_progress(frame, piece_idx)
             
             # Interpolate position
             ix, iy = piece.initial_center
@@ -180,12 +232,22 @@ def render_solved_image(
         dst_x2 = min(width, x2)
         dst_y2 = min(height, y2)
         
+        # Skip if piece is completely outside canvas
+        if dst_x1 >= dst_x2 or dst_y1 >= dst_y2:
+            continue
+        if src_x1 >= src_x2 or src_y1 >= src_y2:
+            continue
+        
         # Only copy non-zero pixels (handle piece masks)
         piece_region = rotated[src_y1:src_y2, src_x1:src_x2]
+        if piece_region.size == 0:
+            continue
+            
         mask = np.any(piece_region > 0, axis=2)
         
         canvas_region = canvas[dst_y1:dst_y2, dst_x1:dst_x2]
-        canvas_region[mask] = piece_region[mask]
+        if canvas_region.shape[:2] == mask.shape:
+            canvas_region[mask] = piece_region[mask]
     
     return canvas
 

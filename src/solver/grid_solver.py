@@ -2,18 +2,21 @@
 
 from typing import List, Tuple, Dict, Optional
 from collections import deque
+import sys
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
 
 from ..utils.piece import Piece
-from .edge_matcher import find_best_match, ROTATIONS
+from .edge_matcher import find_best_match, ROTATIONS, MatchingMethod
 
 
 def solve_grid(
     pieces: List[Piece],
     grid_rows: int,
-    grid_cols: int
+    grid_cols: int,
+    verbose: bool = False,
+    use_fast_matching: bool = True
 ) -> List[Piece]:
     """Solve the puzzle by finding optimal piece placements.
     
@@ -26,6 +29,8 @@ def solve_grid(
         pieces: List of puzzle pieces
         grid_rows: Number of rows in the grid
         grid_cols: Number of columns in the grid
+        verbose: Whether to print progress information
+        use_fast_matching: Use faster SSD matching for large puzzles (>50 pieces)
         
     Returns:
         List of pieces with solved_center and solved_rotation set
@@ -38,8 +43,13 @@ def solve_grid(
             f"Piece count ({n}) doesn't match grid dimensions ({grid_rows}x{grid_cols}={expected_count})"
         )
     
+    # For large puzzles, use faster SSD matching instead of histogram
+    method = MatchingMethod.SSD if (use_fast_matching and n > 50) else MatchingMethod.HISTOGRAM
+    if verbose:
+        print(f"  Using {method.value} matching for {n} pieces...")
+    
     # Build cost matrix for MST
-    cost_matrix, adjacency_info = _build_adjacency_graph(pieces)
+    cost_matrix, adjacency_info = _build_adjacency_graph(pieces, verbose=verbose, method=method)
     
     # Compute MST
     mst = minimum_spanning_tree(csr_matrix(cost_matrix))
@@ -71,12 +81,16 @@ def solve_grid(
 
 
 def _build_adjacency_graph(
-    pieces: List[Piece]
+    pieces: List[Piece],
+    verbose: bool = False,
+    method: MatchingMethod = MatchingMethod.SSD
 ) -> Tuple[np.ndarray, Dict[Tuple[int, int], Dict]]:
     """Build a complete graph of piece adjacencies.
     
     Args:
         pieces: List of puzzle pieces
+        verbose: Whether to print progress
+        method: Matching method to use
         
     Returns:
         Tuple of:
@@ -87,13 +101,27 @@ def _build_adjacency_graph(
     cost_matrix = np.full((n, n), np.inf)
     adjacency_info = {}
     
+    total_pairs = n * (n - 1) // 2
+    pair_count = 0
+    last_progress = -1
+    
     for i in range(n):
         for j in range(i + 1, n):
+            pair_count += 1
+            
+            # Progress reporting
+            if verbose:
+                progress = int(100 * pair_count / total_pairs)
+                if progress >= last_progress + 5:  # Report every 5%
+                    print(f"  Matching progress: {progress}% ({pair_count}/{total_pairs} pairs)", end='\r')
+                    sys.stdout.flush()
+                    last_progress = progress
+            
             # Test horizontal adjacency (i on left, j on right)
-            cost_h, rot_i_h, rot_j_h = find_best_match(pieces[i], pieces[j], 'right')
+            cost_h, rot_i_h, rot_j_h = find_best_match(pieces[i], pieces[j], 'right', method)
             
             # Test vertical adjacency (i on top, j on bottom)
-            cost_v, rot_i_v, rot_j_v = find_best_match(pieces[i], pieces[j], 'bottom')
+            cost_v, rot_i_v, rot_j_v = find_best_match(pieces[i], pieces[j], 'bottom', method)
             
             # Use minimum cost
             if cost_h <= cost_v:
@@ -126,6 +154,9 @@ def _build_adjacency_graph(
                     'rot_j': rot_i_v,
                     'cost': cost_v
                 }
+    
+    if verbose:
+        print(f"  Matching progress: 100% ({total_pairs}/{total_pairs} pairs)")
     
     return cost_matrix, adjacency_info
 

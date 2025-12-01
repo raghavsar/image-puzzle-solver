@@ -1,0 +1,19 @@
+image-puzzle-solver/
+├── requirements.txt          # opencv-python, numpy, matplotlib, scipy
+├── main.py                   # CLI entry point
+└── src/
+    ├── __init__.py
+    ├── segmentation/
+    │   ├── __init__.py
+    │   └── extractor.py      # Piece extraction from images
+    ├── solver/
+    │   ├── __init__.py
+    │   ├── edge_matcher.py   # SSD-based edge matching
+    │   └── grid_solver.py    # MST-based grid reconstruction
+    ├── visualization/
+    │   ├── __init__.py
+    │   └── animator.py       # MP4 animation generation
+    └── utils/
+        ├── __init__.py
+        ├── piece.py          # Piece dataclass
+        └── io.py             # RGB/PNG image loading
