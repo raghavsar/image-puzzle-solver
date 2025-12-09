@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from Tile import Tile
 from Pixel import Pixel
-#from animation_generator import simulate_solve_puzzle, generate_puzzle_animation
 from solver import simulate_solve_puzzle
 from animation_generator import generate_puzzle_animation
 
@@ -74,7 +73,12 @@ if __name__ == '__main__':
                 x, y, w, h = cv2.boundingRect(approx)
                 rect = cv2.minAreaRect(approx)
                 (centerX, centerY), (width, height), angle = rect
+                # print(angle)
                 angle = int(round(angle))
+                # print(angle)
+                initial_position = (x, y)
+                initial_rotation = angle
+
                 '''
                 tried to rotate another way with no success
                 if angle != 90:
@@ -143,7 +147,11 @@ if __name__ == '__main__':
                 cv2.putText(img, f"Tile {numOfTiles}", (n[0], n[1]+20), font, 0.4, (0, 255, 255))
 
                 # Create Tile object
-                tiles.append(Tile(corners=coordinates, edges=pixels, image=tile_img, rotation=angle))
+                tile = Tile(corners=coordinates, edges=pixels, image=tile_img, rotation=angle)
+                tile.initial_rotation = angle
+                tile.initial_position = (x, y)
+                # tile.extracted_img = tile_img.copy()
+                tiles.append(tile)
 
 
         print('Number of tiles found: ', numOfTiles)
@@ -155,7 +163,7 @@ if __name__ == '__main__':
         # =======Image Matching===========
         simulate_solve_puzzle(tiles, img)  # TODO: this function needs to be rewrite
 
-        # =======Animation Generation=======
+        # # =======Animation Generation=======
         output_name = os.path.splitext(image)[0] + "_solution.gif"
         output_path = "outputs/"+output_name
         os.makedirs("outputs", exist_ok=True)

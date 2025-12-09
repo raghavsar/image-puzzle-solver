@@ -129,10 +129,6 @@ def assemble_puzzle_global(tiles, matches):
     for idx, (x, y) in placed.items():
         normalized_positions[idx] = (x - min_x, y - min_y)
         tiles[idx].position = normalized_positions[idx]
-        tiles[idx].final_position = normalized_positions[idx]
-        tiles[idx].initial_position = (0, 0)
-        tiles[idx].initial_rotation = 0
-        tiles[idx].final_rotation = 0
 
     # --- Build grid for convenience ---
     max_x = max(x for x, y in normalized_positions.values())
@@ -140,6 +136,59 @@ def assemble_puzzle_global(tiles, matches):
     grid = [[None for _ in range(max_x+1)] for _ in range(max_y+1)]
     for idx, (x, y) in normalized_positions.items():
         grid[y][x] = tiles[idx]
+
+    # --- Build grid for convenience ---
+    max_x = max(x for x, y in normalized_positions.values())
+    max_y = max(y for x, y in normalized_positions.values())
+    grid = [[None for _ in range(max_x + 1)] for _ in range(max_y + 1)]
+    for idx, (x, y) in normalized_positions.items():
+        grid[y][x] = tiles[idx]
+
+    # --- Compute cell pixel sizes per column/row to handle varying tile sizes ---
+    col_widths = {}
+    row_heights = {}
+    for idx, (col, row) in normalized_positions.items():
+        h, w = tiles[idx].image.shape[:2]
+        col_widths[col] = max(col_widths.get(col, 0), w)
+        row_heights[row] = max(row_heights.get(row, 0), h)
+
+    # Ensure contiguous columns/rows (0..max_col / 0..max_row)
+    cols = list(range(0, max_x + 1))
+    rows = list(range(0, max_y + 1))
+
+    # margin around whole assembled image (in pixels)
+    margin = 20
+    # compute total pixel dimensions
+    total_w = sum(col_widths[c] for c in cols)
+    total_h = sum(row_heights[r] for r in rows)
+
+    # compute top-left pixel for each column and row
+    col_x = {}
+    cur_x = margin
+    for c in cols:
+        col_x[c] = cur_x
+        cur_x += col_widths[c]
+
+    row_y = {}
+    cur_y = margin
+    for r in rows:
+        row_y[r] = cur_y
+        cur_y += row_heights[r]
+
+    # Now set final_position (pixel coordinates, top-left) for every tile,
+    # center each tile inside its cell if its size < cell size.
+    for idx, (col, row) in normalized_positions.items():
+        cell_w = col_widths[col]
+        cell_h = row_heights[row]
+        tile_h, tile_w = tiles[idx].image.shape[:2]
+
+        tx = col_x[col] + (cell_w - tile_w) // 2
+        ty = row_y[row] + (cell_h - tile_h) // 2
+
+        tiles[idx].final_position = (int(tx), int(ty))
+
+        # set final_rotation if desired (default 0 -- upright)
+        tiles[idx].final_rotation = 0
 
     return tiles, grid, max_y+1, max_x+1
 

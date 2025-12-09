@@ -15,4 +15,20 @@ class Tile:
         self.final_position = (0, 0)
         self.initial_rotation = 0
         self.final_rotation = 0
-        self.extracted_img = None  # 裁剪出的拼图块图像数据 (np.ndarray)
+        # self.extracted_img = None  # 裁剪出的拼图块图像数据 (np.ndarray)
+
+        @property
+        def x(self):
+            return self.position[0]
+
+        @property
+        def y(self):
+            return self.position[1]
+
+        @x.setter
+        def x(self, v):
+            self.position = (v, self.position[1])
+
+        @y.setter
+        def y(self, v):
+            self.position = (self.position[0], v)
