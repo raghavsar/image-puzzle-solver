@@ -1,4 +1,9 @@
-"""MST-based grid solver for puzzle reconstruction."""
+"""MST-based grid solver for puzzle reconstruction.
+
+This module provides multiple solving strategies:
+1. Greedy row-by-row assembly (default, most reliable)
+2. MST-based reconstruction (legacy, kept for reference)
+"""
 
 from typing import List, Tuple, Dict, Optional
 from collections import deque
@@ -9,6 +14,11 @@ from scipy.sparse.csgraph import minimum_spanning_tree
 
 from ..utils.piece import Piece
 from .edge_matcher import find_best_match, ROTATIONS, MatchingMethod
+from .grid_solver_v2 import (
+    solve_grid_greedy,
+    solve_grid_with_global_rotation,
+    compute_grid_dimensions
+)
 
 
 def solve_grid(
@@ -20,10 +30,8 @@ def solve_grid(
 ) -> List[Piece]:
     """Solve the puzzle by finding optimal piece placements.
     
-    Uses MST-based reconstruction:
-    1. Build complete graph with edge weights = matching costs
-    2. Compute MST to find most likely adjacencies
-    3. BFS from a root to assign grid positions and rotations
+    Uses greedy row-by-row assembly for reliability.
+    For puzzles with rotation, tries all 4 anchor rotations.
     
     Args:
         pieces: List of puzzle pieces
@@ -43,41 +51,59 @@ def solve_grid(
             f"Piece count ({n}) doesn't match grid dimensions ({grid_rows}x{grid_cols}={expected_count})"
         )
     
-    # For large puzzles, use faster SSD matching instead of histogram
-    method = MatchingMethod.SSD if (use_fast_matching and n > 50) else MatchingMethod.HISTOGRAM
+    # For large puzzles, use faster SSD matching
+    method = MatchingMethod.SSD if (use_fast_matching and n > 50) else MatchingMethod.SSD
     if verbose:
         print(f"  Using {method.value} matching for {n} pieces...")
     
-    # Build cost matrix for MST
-    cost_matrix, adjacency_info = _build_adjacency_graph(pieces, verbose=verbose, method=method)
+    # Determine if this is a rotation puzzle
+    has_rotation = _detect_rotation_puzzle(pieces)
     
-    # Compute MST
-    mst = minimum_spanning_tree(csr_matrix(cost_matrix))
-    mst_array = mst.toarray()
+    if verbose:
+        print(f"  Rotation puzzle detected: {has_rotation}")
     
-    # Make MST symmetric for easier traversal
-    mst_symmetric = mst_array + mst_array.T
+    if has_rotation:
+        # Try all anchor rotations for rotation puzzles
+        return solve_grid_with_global_rotation(
+            pieces, grid_rows, grid_cols, verbose=verbose, method=method
+        )
+    else:
+        # For translation-only, simple greedy works
+        return solve_grid_greedy(
+            pieces, grid_rows, grid_cols, verbose=verbose, method=method
+        )
+
+
+def _detect_rotation_puzzle(pieces: List[Piece]) -> bool:
+    """Detect if this is a rotation puzzle based on piece initial rotations.
     
-    # Find grid layout using BFS
-    grid_positions, rotations = _assign_grid_positions(
-        pieces, mst_symmetric, adjacency_info, grid_rows, grid_cols
-    )
+    For translation-only puzzles, all initial rotations should be 0.
+    For rotation puzzles, pieces may have different rotations.
     
-    # Calculate piece size for positioning
-    piece_width, piece_height = _estimate_piece_size(pieces)
+    Note: Due to limitations in detecting rotation for square pieces,
+    we always assume rotation is possible and test all orientations.
     
-    # Set solved positions and rotations
-    for piece in pieces:
-        pos = grid_positions.get(piece.id)
-        if pos is not None:
-            row, col = pos
-            # Calculate center position in solved image
-            center_x = col * piece_width + piece_width / 2
-            center_y = row * piece_height + piece_height / 2
-            piece.solved_center = (center_x, center_y)
-            piece.solved_rotation = rotations.get(piece.id, 0.0)
+    Args:
+        pieces: List of puzzle pieces
+        
+    Returns:
+        True if rotation puzzle is detected or suspected
+    """
+    # Check if any piece has non-zero initial rotation
+    rotations = [p.initial_rotation for p in pieces]
     
-    return pieces
+    # If we detected any rotation, it's definitely a rotation puzzle
+    if any(r != 0 for r in rotations):
+        return True
+    
+    # Even if no rotation detected, square pieces can't be distinguished
+    # So we conservatively assume rotation is possible
+    if pieces:
+        first = pieces[0]
+        if abs(first.width - first.height) < 5:  # Square-ish pieces
+            return True  # Assume rotation possible
+    
+    return False
 
 
 def _build_adjacency_graph(

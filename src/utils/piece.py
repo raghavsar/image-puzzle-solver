@@ -59,12 +59,13 @@ class Piece:
         
         return rotated
     
-    def get_edge(self, side: str, rotation: float = 0.0) -> np.ndarray:
+    def get_edge(self, side: str, rotation: float = 0.0, strip_width: int = 5) -> np.ndarray:
         """Extract edge pixels from a specific side of the piece.
         
         Args:
             side: Which edge to extract ('top', 'bottom', 'left', 'right')
             rotation: Rotation angle to apply before extracting edge
+            strip_width: Number of pixel rows/columns to extract (default 5)
             
         Returns:
             1D array of edge pixel values (flattened RGB)
@@ -76,14 +77,17 @@ class Piece:
         # For simplicity, extract edge from the specified side of the (rotated) image
         h, w = img.shape[:2]
         
+        # Clamp strip_width to available size
+        strip_width = min(strip_width, min(h, w) // 2)
+        
         if side == 'top':
-            edge = img[0, :, :]
+            edge = img[:strip_width, :, :]
         elif side == 'bottom':
-            edge = img[h - 1, :, :]
+            edge = img[h - strip_width:, :, :]
         elif side == 'left':
-            edge = img[:, 0, :]
+            edge = img[:, :strip_width, :]
         elif side == 'right':
-            edge = img[:, w - 1, :]
+            edge = img[:, w - strip_width:, :]
         else:
             raise ValueError(f"Invalid side: {side}. Must be 'top', 'bottom', 'left', or 'right'")
         
