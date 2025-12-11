@@ -76,9 +76,15 @@ def load_rgb_file(filepath: Union[str, Path], width: int = 800, height: int = 80
             f"({width}x{height}x3), got {actual_size} bytes"
         )
     
-    # Read raw bytes and reshape to image
+    # Read raw bytes. Dataset .rgb files store color planes sequentially:
+    # first all red samples, then green, then blue. Reshape accordingly.
     data = np.fromfile(str(filepath), dtype=np.uint8)
-    image_rgb = data.reshape((height, width, 3))
+    try:
+        image_rgb = data.reshape((3, height, width)).transpose(1, 2, 0)
+    except ValueError as exc:
+        raise ValueError(
+            f"Failed to reshape RGB data with planar layout ({height}x{width})"
+        ) from exc
     
     # Convert RGB to BGR for OpenCV compatibility
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
