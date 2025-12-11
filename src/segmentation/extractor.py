@@ -10,7 +10,8 @@ from ..utils.piece import Piece
 def extract_pieces(
     image: np.ndarray,
     expected_count: int,
-    background_threshold: int = 10
+    background_threshold: int = 10,
+    allow_grid_fallback: bool = True
 ) -> List[Piece]:
     """Extract individual puzzle pieces from a scrambled image.
     
@@ -44,6 +45,10 @@ def extract_pieces(
     # Validate piece count
     detected_count = len(valid_contours)
     if detected_count != expected_count:
+        # Fallback: if we only found one large contour (likely a tiled image with no gaps),
+        # optionally slice the canvas into a regular grid based on expected_count.
+        if allow_grid_fallback and detected_count == 1:
+            return _slice_into_grid(image, expected_count)
         raise ValueError(
             f"Piece count mismatch: expected {expected_count}, detected {detected_count}. "
             f"Check your image or adjust the --n parameter."
@@ -135,6 +140,44 @@ def _estimate_rotation(contour: np.ndarray) -> float:
     angle = angle % 360
     
     return float(angle)
+
+
+def _slice_into_grid(image: np.ndarray, expected_count: int) -> List[Piece]:
+    """Fallback segmentation that slices the canvas into a uniform grid.
+    
+    Useful when pieces touch (contours merge) or the input is already a tiled grid.
+    """
+    h, w = image.shape[:2]
+    
+    # Derive grid dims from expected_count (factor closest to square)
+    rows = int(np.sqrt(expected_count))
+    while expected_count % rows != 0 and rows > 1:
+        rows -= 1
+    cols = expected_count // rows
+    
+    piece_w = w // cols
+    piece_h = h // rows
+    
+    pieces: List[Piece] = []
+    pid = 0
+    for r in range(rows):
+        for c in range(cols):
+            x1 = c * piece_w
+            y1 = r * piece_h
+            x2 = w if c == cols - 1 else (c + 1) * piece_w
+            y2 = h if r == rows - 1 else (r + 1) * piece_h
+            tile = image[y1:y2, x1:x2].copy()
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+            pieces.append(Piece(
+                id=pid,
+                image=tile,
+                initial_center=(center_x, center_y),
+                initial_rotation=0.0
+            ))
+            pid += 1
+    
+    return pieces
 
 
 def get_piece_size(image: np.ndarray, expected_count: int) -> Tuple[int, int]:

@@ -180,12 +180,14 @@ def _solve_best_translation(
     """Try all pieces as anchor for translation-only solve; pick best cost."""
     best_solution = None
     best_cost = float('inf')
+    cost_cache: Dict[Tuple[int, float, int, float, str], float] = {}
     
     for anchor in range(len(pieces)):
         candidate = deepcopy(pieces)
         solved = solve_grid_greedy(
             candidate, grid_rows, grid_cols,
-            verbose=False, method=method, rotations=rotations, anchor_piece=anchor
+            verbose=False, method=method, rotations=rotations,
+            anchor_piece=anchor, cost_cache=cost_cache
         )
         cost = _compute_solution_cost(solved, grid_rows, grid_cols, method)
         if cost < best_cost:
@@ -209,12 +211,13 @@ def _solve_best_rotation(
     """Try all anchor pieces (and rotations internally) for rotation puzzles."""
     best_solution = None
     best_cost = float('inf')
+    cost_cache: Dict[Tuple[int, float, int, float, str], float] = {}
     
     for anchor in range(len(pieces)):
         candidate = deepcopy(pieces)
         solved = solve_grid_with_global_rotation(
             candidate, grid_rows, grid_cols,
-            verbose=False, method=method, anchor_piece=anchor
+            verbose=False, method=method, anchor_piece=anchor, cost_cache=cost_cache
         )
         cost = _compute_solution_cost(solved, grid_rows, grid_cols, method)
         if cost < best_cost:

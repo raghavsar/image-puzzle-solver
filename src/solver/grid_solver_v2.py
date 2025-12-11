@@ -21,7 +21,8 @@ def solve_grid_greedy(
     verbose: bool = False,
     method: MatchingMethod = MatchingMethod.SSD,
     rotations: Iterable[float] = ROTATIONS,
-    anchor_piece: int = 0
+    anchor_piece: int = 0,
+    cost_cache: Optional[Dict[Tuple[int, float, int, float, str], float]] = None,
 ) -> List[Piece]:
     """Solve the puzzle by greedy row-by-row assembly.
     
@@ -68,16 +69,16 @@ def solve_grid_greedy(
         print("  Precomputing pairwise matching costs...")
     
     # Cache: (piece_i, rot_i, piece_j, rot_j, side) -> cost
-    cost_cache: Dict[Tuple[int, float, int, float, str], float] = {}
+    local_cache: Dict[Tuple[int, float, int, float, str], float] = cost_cache if cost_cache is not None else {}
     
     def get_match_cost(piece_i: int, rot_i: float, piece_j: int, rot_j: float, side: str) -> float:
         """Get or compute matching cost between two pieces."""
         key = (piece_i, rot_i, piece_j, rot_j, side)
-        if key not in cost_cache:
-            cost_cache[key] = compute_edge_cost(
+        if key not in local_cache:
+            local_cache[key] = compute_edge_cost(
                 pieces[piece_i], pieces[piece_j], side, rot_i, rot_j, method
             )
-        return cost_cache[key]
+        return local_cache[key]
     
     def find_best_piece_for_position(
         row: int, col: int,
@@ -209,7 +210,8 @@ def solve_grid_with_global_rotation(
     grid_cols: int,
     verbose: bool = False,
     method: MatchingMethod = MatchingMethod.SSD,
-    anchor_piece: int = 0
+    anchor_piece: int = 0,
+    cost_cache: Optional[Dict[Tuple[int, float, int, float, str], float]] = None
 ) -> List[Piece]:
     """Solve puzzle trying all 4 global rotations of the anchor piece.
     
@@ -254,7 +256,8 @@ def solve_grid_with_global_rotation(
                 anchor_rotation=float(anchor_rotation),
                 verbose=verbose,
                 method=method,
-                anchor_piece=anchor_piece
+                anchor_piece=anchor_piece,
+                cost_cache=cost_cache
             )
             
             # Compute total cost
@@ -293,7 +296,8 @@ def _solve_with_anchor_rotation(
     anchor_rotation: float,
     verbose: bool,
     method: MatchingMethod,
-    anchor_piece: int = 0
+    anchor_piece: int = 0,
+    cost_cache: Optional[Dict[Tuple[int, float, int, float, str], float]] = None
 ) -> List[Piece]:
     """Internal solver with specific anchor rotation."""
     n = len(pieces)
@@ -301,16 +305,16 @@ def _solve_with_anchor_rotation(
     grid: List[List[Optional[Tuple[int, float]]]] = [[None] * grid_cols for _ in range(grid_rows)]
     used_pieces: Set[int] = set()
     
-    # Cache for matching costs
-    cost_cache: Dict[Tuple[int, float, int, float, str], float] = {}
+    # Cache for matching costs (shared if provided)
+    local_cache: Dict[Tuple[int, float, int, float, str], float] = cost_cache if cost_cache is not None else {}
     
     def get_match_cost(piece_i: int, rot_i: float, piece_j: int, rot_j: float, side: str) -> float:
         key = (piece_i, rot_i, piece_j, rot_j, side)
-        if key not in cost_cache:
-            cost_cache[key] = compute_edge_cost(
+        if key not in local_cache:
+            local_cache[key] = compute_edge_cost(
                 pieces[piece_i], pieces[piece_j], side, rot_i, rot_j, method
             )
-        return cost_cache[key]
+        return local_cache[key]
     
     def find_best_piece(
         left_piece: Optional[Tuple[int, float]],
