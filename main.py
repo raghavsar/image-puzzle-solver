@@ -16,7 +16,7 @@ from pathlib import Path
 
 from src.utils.io import load_image, save_image
 from src.utils.piece import Piece
-from src.segmentation.extractor import extract_pieces
+from src.segmentation.extractor import extract_pieces, detect_piece_count
 from src.solver.grid_solver import solve_grid, compute_grid_dimensions
 from src.visualization.animator import create_animation, render_solved_image, AnimationStyle
 
@@ -48,8 +48,8 @@ Examples:
     parser.add_argument(
         "--n", "-n",
         type=int,
-        required=True,
-        help="Expected number of puzzle pieces"
+        default=None,
+        help="Expected number of puzzle pieces (auto-detected if omitted)"
     )
     
     parser.add_argument(
@@ -135,23 +135,6 @@ def main():
         print(f"Error: Input file not found: {input_path}", file=sys.stderr)
         sys.exit(1)
     
-    # Determine grid dimensions
-    if args.grid_rows is not None and args.grid_cols is not None:
-        grid_rows = args.grid_rows
-        grid_cols = args.grid_cols
-        if grid_rows * grid_cols != args.n:
-            print(
-                f"Error: Grid dimensions ({grid_rows}x{grid_cols}={grid_rows*grid_cols}) "
-                f"don't match piece count ({args.n})",
-                file=sys.stderr
-            )
-            sys.exit(1)
-    else:
-        # Auto-compute grid dimensions
-        grid_rows, grid_cols = compute_grid_dimensions(args.n)
-        if args.verbose:
-            print(f"Auto-computed grid dimensions: {grid_rows}x{grid_cols}")
-    
     # Pipeline
     try:
         # Step 1: Load image
@@ -160,16 +143,40 @@ def main():
         image = load_image(input_path, width=args.width, height=args.height)
         canvas_size = (image.shape[1], image.shape[0])
         
-        # Step 2: Extract pieces
+        # Step 1.5: Determine piece count if not provided
+        piece_count = args.n
+        if piece_count is None:
+            piece_count = detect_piece_count(image)
+            if args.verbose:
+                print(f"Auto-detected piece count: {piece_count}")
+        
+        # Step 2: Determine grid dimensions
+        if args.grid_rows is not None and args.grid_cols is not None:
+            grid_rows = args.grid_rows
+            grid_cols = args.grid_cols
+            if grid_rows * grid_cols != piece_count:
+                print(
+                    f"Error: Grid dimensions ({grid_rows}x{grid_cols}={grid_rows*grid_cols}) "
+                    f"don't match piece count ({piece_count})",
+                    file=sys.stderr
+                )
+                sys.exit(1)
+        else:
+            # Auto-compute grid dimensions
+            grid_rows, grid_cols = compute_grid_dimensions(piece_count)
+            if args.verbose:
+                print(f"Auto-computed grid dimensions: {grid_rows}x{grid_cols}")
+        
+        # Step 3: Extract pieces
         if args.verbose:
-            print(f"Extracting {args.n} pieces...")
-        pieces = extract_pieces(image, expected_count=args.n)
+            print(f"Extracting {piece_count} pieces...")
+        pieces = extract_pieces(image, expected_count=piece_count)
         if args.verbose:
             print(f"Extracted {len(pieces)} pieces")
             for p in pieces:
                 print(f"  {p}")
         
-        # Step 3: Solve puzzle
+        # Step 4: Solve puzzle
         if args.verbose:
             print(f"Solving puzzle ({grid_rows}x{grid_cols} grid)...")
         solved_pieces = solve_grid(pieces, grid_rows, grid_cols, verbose=args.verbose)

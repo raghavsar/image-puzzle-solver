@@ -1,6 +1,6 @@
 """Piece extraction from scrambled puzzle images."""
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 import cv2
 import numpy as np
 
@@ -178,6 +178,72 @@ def _slice_into_grid(image: np.ndarray, expected_count: int) -> List[Piece]:
             pid += 1
     
     return pieces
+
+
+def detect_piece_count(
+    image: np.ndarray,
+    background_threshold: int = 10,
+    min_area: int = 100
+) -> int:
+    """Estimate the number of pieces in a scrambled image.
+    
+    Uses the same threshold/contour logic as extraction. If contours merge
+    into a single blob (e.g., pre-tiled grid), falls back to detecting grid
+    lines based on gradient peaks to infer rows/cols.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, background_threshold, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    valid_contours = [c for c in contours if cv2.contourArea(c) > min_area]
+    
+    detected = len(valid_contours)
+    if detected > 1:
+        return detected
+    
+    # Single blob: try to infer grid by detecting boundary lines
+    rows, cols = _detect_grid_from_edges(gray)
+    if rows * cols > 1:
+        return rows * cols
+    
+    # Worst-case fallback
+    return max(1, detected)
+
+
+def _detect_grid_from_edges(gray: np.ndarray) -> Tuple[int, int]:
+    """Detect grid rows/cols from edge responses when pieces touch."""
+    # Compute mean absolute diff along axes
+    col_diff = np.abs(np.diff(gray.astype(np.float32), axis=1)).mean(axis=0)
+    row_diff = np.abs(np.diff(gray.astype(np.float32), axis=0)).mean(axis=1)
+    
+    cols = _count_segments(col_diff)
+    rows = _count_segments(row_diff)
+    
+    return rows, cols
+
+
+def _count_segments(diff: np.ndarray, std_factor: float = 2.0, min_gap: int = 2) -> int:
+    """Count segments separated by peaks in diff signal."""
+    if diff.size == 0:
+        return 1
+    
+    threshold = float(diff.mean() + std_factor * diff.std())
+    indices = np.where(diff > threshold)[0]
+    if len(indices) == 0:
+        return 1
+    
+    # Group contiguous peaks
+    groups = []
+    start = indices[0]
+    prev = indices[0]
+    for idx in indices[1:]:
+        if idx - prev > min_gap:
+            groups.append((start, prev))
+            start = idx
+        prev = idx
+    groups.append((start, prev))
+    
+    # Number of segments = number of separators + 1
+    return len(groups) + 1
 
 
 def get_piece_size(image: np.ndarray, expected_count: int) -> Tuple[int, int]:
