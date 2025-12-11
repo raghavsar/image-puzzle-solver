@@ -7,7 +7,7 @@ This solver uses a greedy best-first approach:
 4. Each piece placement tests all 4 rotations to find the best fit
 """
 
-from typing import List, Tuple, Dict, Optional, Set
+from typing import List, Tuple, Dict, Optional, Set, Iterable
 import numpy as np
 
 from ..utils.piece import Piece
@@ -19,7 +19,9 @@ def solve_grid_greedy(
     grid_rows: int,
     grid_cols: int,
     verbose: bool = False,
-    method: MatchingMethod = MatchingMethod.SSD
+    method: MatchingMethod = MatchingMethod.SSD,
+    rotations: Iterable[float] = ROTATIONS,
+    anchor_piece: int = 0
 ) -> List[Piece]:
     """Solve the puzzle by greedy row-by-row assembly.
     
@@ -48,9 +50,14 @@ def solve_grid_greedy(
             f"Piece count ({n}) doesn't match grid dimensions ({grid_rows}x{grid_cols}={expected_count})"
         )
     
+    rotations_to_try = tuple(rotations)
+
     if verbose:
         print(f"  Solving {grid_rows}x{grid_cols} grid with greedy algorithm...")
         print(f"  Using {method.value} matching...")
+        rot_str = ", ".join(str(r) for r in rotations_to_try)
+        print(f"  Rotations considered: {rot_str}")
+        print(f"  Anchor piece index: {anchor_piece}")
     
     # Build the grid
     grid: List[List[Optional[Tuple[int, float]]]] = [[None] * grid_cols for _ in range(grid_rows)]
@@ -95,7 +102,7 @@ def solve_grid_greedy(
             if piece_idx in used_pieces:
                 continue
             
-            for rotation in ROTATIONS:
+            for rotation in rotations_to_try:
                 rot = float(rotation)
                 total_cost = 0.0
                 
@@ -129,8 +136,8 @@ def solve_grid_greedy(
     # For rotation puzzles, we need to find the correct orientation
     
     # Place top-left corner - try to find a piece that has good edge characteristics
-    start_piece_idx = 0
-    start_rotation = 0.0
+    start_piece_idx = anchor_piece
+    start_rotation = float(rotations_to_try[0]) if rotations_to_try else 0.0
     
     grid[0][0] = (start_piece_idx, start_rotation)
     used_pieces.add(start_piece_idx)
@@ -201,7 +208,8 @@ def solve_grid_with_global_rotation(
     grid_rows: int,
     grid_cols: int,
     verbose: bool = False,
-    method: MatchingMethod = MatchingMethod.SSD
+    method: MatchingMethod = MatchingMethod.SSD,
+    anchor_piece: int = 0
 ) -> List[Piece]:
     """Solve puzzle trying all 4 global rotations of the anchor piece.
     
@@ -245,7 +253,8 @@ def solve_grid_with_global_rotation(
                 pieces_copy, grid_rows, grid_cols,
                 anchor_rotation=float(anchor_rotation),
                 verbose=verbose,
-                method=method
+                method=method,
+                anchor_piece=anchor_piece
             )
             
             # Compute total cost
@@ -283,7 +292,8 @@ def _solve_with_anchor_rotation(
     grid_cols: int,
     anchor_rotation: float,
     verbose: bool,
-    method: MatchingMethod
+    method: MatchingMethod,
+    anchor_piece: int = 0
 ) -> List[Piece]:
     """Internal solver with specific anchor rotation."""
     n = len(pieces)
@@ -336,8 +346,8 @@ def _solve_with_anchor_rotation(
         return best_piece, best_rotation, best_cost
     
     # Place anchor
-    grid[0][0] = (0, anchor_rotation)
-    used_pieces.add(0)
+    grid[0][0] = (anchor_piece, anchor_rotation)
+    used_pieces.add(anchor_piece)
     
     # Build first row
     for col in range(1, grid_cols):

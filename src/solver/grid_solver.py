@@ -11,13 +11,15 @@ import sys
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
+from copy import deepcopy
 
 from ..utils.piece import Piece
 from .edge_matcher import find_best_match, ROTATIONS, MatchingMethod
 from .grid_solver_v2 import (
     solve_grid_greedy,
     solve_grid_with_global_rotation,
-    compute_grid_dimensions
+    compute_grid_dimensions,
+    _compute_solution_cost
 )
 
 
@@ -51,27 +53,42 @@ def solve_grid(
             f"Piece count ({n}) doesn't match grid dimensions ({grid_rows}x{grid_cols}={expected_count})"
         )
     
-    # For large puzzles, use faster SSD matching
-    method = MatchingMethod.SSD if (use_fast_matching and n > 50) else MatchingMethod.SSD
+    # For small puzzles, histogram matching is more reliable; fall back to SSD for large N
+    method = MatchingMethod.SSD if (use_fast_matching and n > 50) else MatchingMethod.HISTOGRAM
     if verbose:
         print(f"  Using {method.value} matching for {n} pieces...")
     
     # Determine if this is a rotation puzzle
     has_rotation = _detect_rotation_puzzle(pieces)
+    rotations = [p.initial_rotation for p in pieces]
+    uniform_rotation = _rotations_uniform(rotations)
     
     if verbose:
         print(f"  Rotation puzzle detected: {has_rotation}")
+        if uniform_rotation:
+            base_rot = rotations[0] if rotations else 0.0
+            print(f"  Detected uniform initial rotation: {base_rot}°")
+    
+    # If rotation detection is uncertain (all pieces report the same angle),
+    # try both rotation-enabled and translation-only solutions and pick the better one.
+    if has_rotation and uniform_rotation:
+        if verbose:
+            print("  Rotation evidence is weak (all pieces share the same angle). "
+                  "Trying rotation and translation-only solvers, picking the lower-cost result.")
+        return _solve_with_fallback(
+            pieces, grid_rows, grid_cols, method=method, verbose=verbose
+        )
     
     if has_rotation:
-        # Try all anchor rotations for rotation puzzles
-        return solve_grid_with_global_rotation(
-            pieces, grid_rows, grid_cols, verbose=verbose, method=method
+        # Try all anchor pieces to avoid biasing the solution
+        return _solve_best_rotation(
+            pieces, grid_rows, grid_cols, method=method, verbose=verbose
         )
-    else:
-        # For translation-only, simple greedy works
-        return solve_grid_greedy(
-            pieces, grid_rows, grid_cols, verbose=verbose, method=method
-        )
+    
+    # Translation-only: restrict rotations to 0 for stability
+    return _solve_best_translation(
+        pieces, grid_rows, grid_cols, method=method, verbose=verbose, rotations=(0,)
+    )
 
 
 def _detect_rotation_puzzle(pieces: List[Piece]) -> bool:
@@ -104,6 +121,111 @@ def _detect_rotation_puzzle(pieces: List[Piece]) -> bool:
             return True  # Assume rotation possible
     
     return False
+
+
+def _rotations_uniform(rotations: List[float], tolerance: float = 1e-3) -> bool:
+    """Check if all rotations are effectively the same (mod 360)."""
+    if not rotations:
+        return True
+    base = rotations[0] % 360
+    return all(abs((r % 360) - base) < tolerance for r in rotations)
+
+
+def _copy_solution(src: List[Piece], dst: List[Piece]) -> None:
+    """Copy solved centers/rotations from dst list to src list by id."""
+    solved_map = {p.id: p for p in dst}
+    for p in src:
+        solved = solved_map.get(p.id)
+        if solved is not None:
+            p.solved_center = solved.solved_center
+            p.solved_rotation = solved.solved_rotation
+
+
+def _solve_with_fallback(
+    pieces: List[Piece],
+    grid_rows: int,
+    grid_cols: int,
+    method: MatchingMethod,
+    verbose: bool
+) -> List[Piece]:
+    """Run both rotation-enabled and translation-only solvers, choose lower cost."""
+    rot_solution = _solve_best_rotation(
+        deepcopy(pieces), grid_rows, grid_cols, method=method, verbose=False
+    )
+    rot_cost = _compute_solution_cost(rot_solution, grid_rows, grid_cols, method)
+    
+    trans_solution = _solve_best_translation(
+        deepcopy(pieces), grid_rows, grid_cols,
+        method=method, verbose=False, rotations=(0,)
+    )
+    trans_cost = _compute_solution_cost(trans_solution, grid_rows, grid_cols, method)
+    
+    if verbose:
+        print(f"  Cost (rotation allowed): {rot_cost:.2f}")
+        print(f"  Cost (translation-only): {trans_cost:.2f}")
+    
+    best = rot_solution if rot_cost <= trans_cost else trans_solution
+    _copy_solution(pieces, best)
+    return pieces
+
+
+def _solve_best_translation(
+    pieces: List[Piece],
+    grid_rows: int,
+    grid_cols: int,
+    method: MatchingMethod,
+    verbose: bool,
+    rotations: Tuple[float, ...] = (0,)
+) -> List[Piece]:
+    """Try all pieces as anchor for translation-only solve; pick best cost."""
+    best_solution = None
+    best_cost = float('inf')
+    
+    for anchor in range(len(pieces)):
+        candidate = deepcopy(pieces)
+        solved = solve_grid_greedy(
+            candidate, grid_rows, grid_cols,
+            verbose=False, method=method, rotations=rotations, anchor_piece=anchor
+        )
+        cost = _compute_solution_cost(solved, grid_rows, grid_cols, method)
+        if cost < best_cost:
+            best_cost = cost
+            best_solution = solved
+    
+    if verbose:
+        print(f"  Best translation-only cost across anchors: {best_cost:.2f}")
+    
+    _copy_solution(pieces, best_solution)
+    return pieces
+
+
+def _solve_best_rotation(
+    pieces: List[Piece],
+    grid_rows: int,
+    grid_cols: int,
+    method: MatchingMethod,
+    verbose: bool
+) -> List[Piece]:
+    """Try all anchor pieces (and rotations internally) for rotation puzzles."""
+    best_solution = None
+    best_cost = float('inf')
+    
+    for anchor in range(len(pieces)):
+        candidate = deepcopy(pieces)
+        solved = solve_grid_with_global_rotation(
+            candidate, grid_rows, grid_cols,
+            verbose=False, method=method, anchor_piece=anchor
+        )
+        cost = _compute_solution_cost(solved, grid_rows, grid_cols, method)
+        if cost < best_cost:
+            best_cost = cost
+            best_solution = solved
+    
+    if verbose:
+        print(f"  Best rotation-enabled cost across anchors: {best_cost:.2f}")
+    
+    _copy_solution(pieces, best_solution)
+    return pieces
 
 
 def _build_adjacency_graph(
