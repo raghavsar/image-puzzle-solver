@@ -49,9 +49,10 @@ def load_image(filepath: Union[str, Path], width: int = 800, height: int = 800) 
 def load_rgb_file(filepath: Union[str, Path], width: int = 800, height: int = 800) -> np.ndarray:
     """Load a raw .rgb file.
     
-    The .rgb format is assumed to be raw RGB pixel data stored as:
-    - 3 bytes per pixel (R, G, B)
-    - Row-major order
+    The .rgb format uses planar storage:
+    - First all R values (width * height bytes)
+    - Then all G values (width * height bytes)
+    - Then all B values (width * height bytes)
     - Total size: width * height * 3 bytes
     
     Args:
@@ -76,9 +77,14 @@ def load_rgb_file(filepath: Union[str, Path], width: int = 800, height: int = 80
             f"({width}x{height}x3), got {actual_size} bytes"
         )
     
-    # Read raw bytes and reshape to image
+    # Read raw bytes
     data = np.fromfile(str(filepath), dtype=np.uint8)
-    image_rgb = data.reshape((height, width, 3))
+    
+    # Reshape as planar (3 planes: R, G, B)
+    planar = data.reshape(3, height, width)
+    
+    # Transpose to (height, width, 3) format
+    image_rgb = np.transpose(planar, (1, 2, 0))
     
     # Convert RGB to BGR for OpenCV compatibility
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)

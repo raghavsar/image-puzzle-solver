@@ -18,7 +18,7 @@ from src.utils.io import load_image, save_image
 from src.utils.piece import Piece
 from src.segmentation.extractor import extract_pieces, detect_piece_count
 from src.solver.grid_solver import solve_grid, compute_grid_dimensions
-from src.visualization.animator import create_animation, render_solved_image, AnimationStyle
+from src.visualization.animator import create_animation, create_animation_cv2, render_solved_image, AnimationStyle
 
 
 def parse_args():
@@ -198,7 +198,8 @@ def main():
         }
         animation_style = style_map.get(args.animation_style, AnimationStyle.SIMULTANEOUS)
         
-        output_path = create_animation(
+        # Use CV2-based animation (faster and better for rotation puzzles)
+        output_path = create_animation_cv2(
             solved_pieces,
             output_path=args.output,
             canvas_size=canvas_size,

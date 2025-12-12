@@ -12,11 +12,12 @@ class Piece:
     
     Attributes:
         id: Unique identifier for the piece
-        image: The piece image (BGR format for OpenCV)
+        image: The piece image (BGR format for OpenCV) - already unrotated/axis-aligned
         initial_center: Initial (x, y) center position in the scrambled image
-        initial_rotation: Initial rotation angle in degrees (0, 90, 180, 270)
+        initial_rotation: Initial rotation angle in degrees (how much piece was rotated in scrambled image)
         solved_center: Final (x, y) center position in the solved image
-        solved_rotation: Final rotation angle in degrees
+        solved_rotation: Final rotation angle in degrees (typically 0)
+        mask: Binary mask for the piece (for alpha-blended compositing)
     """
     id: int
     image: np.ndarray
@@ -24,6 +25,7 @@ class Piece:
     initial_rotation: float = 0.0
     solved_center: Optional[Tuple[float, float]] = None
     solved_rotation: float = 0.0
+    mask: Optional[np.ndarray] = None
     
     def get_rotated_image(self, angle: float) -> np.ndarray:
         """Get the piece image rotated by the specified angle.
@@ -58,6 +60,56 @@ class Piece:
                                   borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
         
         return rotated
+    
+    def get_rotated_mask(self, angle: float) -> np.ndarray:
+        """Get the piece mask rotated by the specified angle.
+        
+        Args:
+            angle: Rotation angle in degrees (positive = counter-clockwise)
+            
+        Returns:
+            Rotated mask as numpy array
+        """
+        mask = self.get_mask()
+        
+        if angle == 0:
+            return mask.copy()
+        
+        h, w = mask.shape[:2]
+        center = (w / 2, h / 2)
+        
+        # Get rotation matrix
+        rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+        
+        # Calculate new bounding box size
+        cos = np.abs(rotation_matrix[0, 0])
+        sin = np.abs(rotation_matrix[0, 1])
+        new_w = int(h * sin + w * cos)
+        new_h = int(h * cos + w * sin)
+        
+        # Adjust rotation matrix for translation
+        rotation_matrix[0, 2] += (new_w - w) / 2
+        rotation_matrix[1, 2] += (new_h - h) / 2
+        
+        # Perform rotation
+        rotated = cv2.warpAffine(mask, rotation_matrix, (new_w, new_h),
+                                  borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        
+        return rotated
+    
+    def get_mask(self) -> np.ndarray:
+        """Get or create the piece mask.
+        
+        Returns:
+            Binary mask where piece pixels are 255, background is 0
+        """
+        if self.mask is not None:
+            return self.mask
+        
+        # Create mask from non-zero pixels
+        gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY)
+        return mask
     
     def get_edge(self, side: str, rotation: float = 0.0, strip_width: int = 5) -> np.ndarray:
         """Extract edge pixels from a specific side of the piece.

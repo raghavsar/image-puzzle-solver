@@ -1,4 +1,8 @@
-"""Animation utilities for creating MP4 puzzle solution videos."""
+"""Animation utilities for creating MP4 puzzle solution videos.
+
+Supports both matplotlib-based and OpenCV-based animation generation.
+OpenCV-based is faster and produces better results for rotation puzzles.
+"""
 
 from typing import List, Tuple, Optional
 from pathlib import Path
@@ -196,6 +200,8 @@ def render_solved_image(
 ) -> np.ndarray:
     """Render the solved puzzle as a static image.
     
+    Uses mask-based alpha blending for proper compositing of rotated pieces.
+    
     Args:
         pieces: List of pieces with solved positions set
         canvas_size: Size of the output canvas
@@ -210,8 +216,9 @@ def render_solved_image(
         if piece.solved_center is None:
             continue
         
-        # Get rotated image
+        # Get rotated image and mask
         rotated = piece.get_rotated_image(piece.solved_rotation)
+        rotated_mask = piece.get_rotated_mask(piece.solved_rotation)
         h, w = rotated.shape[:2]
         
         # Calculate position
@@ -238,18 +245,176 @@ def render_solved_image(
         if src_x1 >= src_x2 or src_y1 >= src_y2:
             continue
         
-        # Only copy non-zero pixels (handle piece masks)
+        # Get piece region and mask
         piece_region = rotated[src_y1:src_y2, src_x1:src_x2]
+        mask_region = rotated_mask[src_y1:src_y2, src_x1:src_x2]
+        
         if piece_region.size == 0:
             continue
-            
-        mask = np.any(piece_region > 0, axis=2)
         
+        # Alpha blend using mask
         canvas_region = canvas[dst_y1:dst_y2, dst_x1:dst_x2]
-        if canvas_region.shape[:2] == mask.shape:
-            canvas_region[mask] = piece_region[mask]
+        if canvas_region.shape[:2] == mask_region.shape:
+            # Normalize mask to 0-1 range for blending
+            alpha = (mask_region / 255.0)[:, :, np.newaxis]
+            blended = (piece_region * alpha + canvas_region * (1 - alpha)).astype(np.uint8)
+            canvas[dst_y1:dst_y2, dst_x1:dst_x2] = blended
     
     return canvas
+
+
+def create_animation_cv2(
+    pieces: List[Piece],
+    output_path: str = "solution.mp4",
+    canvas_size: Tuple[int, int] = (800, 800),
+    fps: int = 30,
+    duration: float = 5.0,
+    style: AnimationStyle = AnimationStyle.SIMULTANEOUS
+) -> str:
+    """Create an MP4 animation using OpenCV (faster, better for rotation puzzles).
+    
+    This method uses direct OpenCV rendering with mask-based alpha blending,
+    which produces smoother results for rotating pieces.
+    
+    Args:
+        pieces: List of pieces with both initial and solved positions set
+        output_path: Path for the output MP4 file
+        canvas_size: Size of the animation canvas (width, height)
+        fps: Frames per second
+        duration: Animation duration in seconds
+        style: Animation style (simultaneous, sequential, or wave)
+        
+    Returns:
+        Path to the created MP4 file
+    """
+    num_frames = int(fps * duration)
+    width, height = canvas_size
+    n_pieces = len(pieces)
+    
+    # Create output directory if needed
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    
+    if not writer.isOpened():
+        # Fall back to matplotlib-based animation
+        print("OpenCV video writer failed, falling back to matplotlib")
+        return create_animation(pieces, str(output_path), canvas_size, fps, duration, False, style)
+    
+    def interpolate_value(start: float, end: float, t: float) -> float:
+        """Smooth interpolation using ease-in-out cubic."""
+        t = t * t * (3 - 2 * t)
+        return start + (end - start) * t
+    
+    def interpolate_angle(start: float, end: float, t: float) -> float:
+        """Interpolate angle using shortest path."""
+        start = start % 360
+        end = end % 360
+        
+        diff = end - start
+        if diff > 180:
+            diff -= 360
+        elif diff < -180:
+            diff += 360
+        
+        t = t * t * (3 - 2 * t)
+        return start + diff * t
+    
+    def get_piece_progress(frame: int, piece_idx: int) -> float:
+        """Get animation progress for a specific piece based on style."""
+        global_t = frame / (num_frames - 1) if num_frames > 1 else 1.0
+        
+        if style == AnimationStyle.SIMULTANEOUS:
+            return global_t
+        elif style == AnimationStyle.SEQUENTIAL:
+            piece_duration = 1.0 / n_pieces
+            piece_start = piece_idx * piece_duration
+            piece_end = piece_start + piece_duration
+            
+            if global_t < piece_start:
+                return 0.0
+            elif global_t > piece_end:
+                return 1.0
+            else:
+                return (global_t - piece_start) / piece_duration
+        elif style == AnimationStyle.WAVE:
+            overlap = 0.7
+            piece_duration = 1.0 / (1 + (n_pieces - 1) * (1 - overlap))
+            piece_start = piece_idx * piece_duration * (1 - overlap)
+            piece_end = piece_start + piece_duration
+            
+            if global_t < piece_start:
+                return 0.0
+            elif global_t > piece_end:
+                return 1.0
+            else:
+                return (global_t - piece_start) / piece_duration
+        
+        return global_t
+    
+    # Generate frames
+    for frame in range(num_frames):
+        canvas = np.zeros((height, width, 3), dtype=np.uint8)
+        
+        for piece_idx, piece in enumerate(pieces):
+            if piece.solved_center is None:
+                continue
+            
+            # Get progress for this piece
+            t = get_piece_progress(frame, piece_idx)
+            
+            # Interpolate position
+            ix, iy = piece.initial_center
+            sx, sy = piece.solved_center
+            cx = interpolate_value(ix, sx, t)
+            cy = interpolate_value(iy, sy, t)
+            
+            # Interpolate rotation
+            angle = interpolate_angle(piece.initial_rotation, piece.solved_rotation, t)
+            
+            # Get rotated image and mask
+            rotated_img = piece.get_rotated_image(angle)
+            rotated_mask = piece.get_rotated_mask(angle)
+            
+            img_h, img_w = rotated_img.shape[:2]
+            
+            # Calculate position on canvas (centered at interpolated position)
+            x1 = int(cx - img_w / 2)
+            y1 = int(cy - img_h / 2)
+            x2 = x1 + img_w
+            y2 = y1 + img_h
+            
+            # Clip to canvas bounds
+            x1_clamped = max(x1, 0)
+            y1_clamped = max(y1, 0)
+            x2_clamped = min(x2, width)
+            y2_clamped = min(y2, height)
+            
+            if x1_clamped < x2_clamped and y1_clamped < y2_clamped:
+                # Calculate source region
+                sx1 = x1_clamped - x1
+                sy1 = y1_clamped - y1
+                sx2 = sx1 + (x2_clamped - x1_clamped)
+                sy2 = sy1 + (y2_clamped - y1_clamped)
+                
+                # Get source image and mask regions
+                src = rotated_img[sy1:sy2, sx1:sx2]
+                mask = rotated_mask[sy1:sy2, sx1:sx2]
+                
+                # Alpha blend onto canvas
+                alpha = (mask / 255.0)[:, :, np.newaxis]
+                canvas_region = canvas[y1_clamped:y2_clamped, x1_clamped:x2_clamped]
+                
+                blended = (src * alpha + canvas_region * (1 - alpha)).astype(np.uint8)
+                canvas[y1_clamped:y2_clamped, x1_clamped:x2_clamped] = blended
+        
+        writer.write(canvas)
+    
+    writer.release()
+    return str(output_path)
 
 
 def create_side_by_side(
