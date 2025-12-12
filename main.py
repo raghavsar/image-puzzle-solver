@@ -12,21 +12,22 @@ font = cv2.FONT_HERSHEY_COMPLEX
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    images = ["starry_night_translate.png","starry_night_rotate.png", "starry_night_translate.rgb", "starry_night_rotate.rgb",
-              "starry_night_translate_irreg.png", "starry_night_rotate_irreg.png", "starry_night_translate_irreg.rgb", "starry_night_rotate_irreg.rgb",
-              "mona_lisa_translate.png", "mona_lisa_rotate.png", "mona_lisa_translate.rgb", "mona_lisa_rotate.rgb",
-              "mona_lisa_translate_irreg.png", "mona_lisa_rotate_irreg.png", "mona_lisa_translate_irreg.rgb", "mona_lisa_rotate_irreg.rgb",
-              "sample1_translate.png", "sample1_rotate.png", "sample1_translate.rgb", "sample1_rotate.rgb",
-              "sample1_translate_irreg.png", "sample1_rotate_irreg.png", "sample1_translate_irreg.rgb", "sample1_rotate_irreg.rgb",
-              "sample2_translate.png", "sample2_rotate.png", "sample2_translate.rgb", "sample2_rotate.rgb",
-              "sample2_translate_irreg.png", "sample2_rotate_irreg.png", "sample2_translate_irreg.rgb", "sample2_rotate_irreg.rgb",
-              "sample3_translate.png", "sample3_rotate.png", "sample3_translate.rgb", "sample3_rotate.rgb",
-              "sample3_translate_irreg.png", "sample3_rotate_irreg.png", "sample3_translate_irreg.rgb", "sample3_rotate_irreg.rgb"]
-
+    # images = ["starry_night_translate.png","starry_night_rotate.png", "starry_night_translate.rgb", "starry_night_rotate.rgb",
+    #           "starry_night_translate_irreg.png", "starry_night_rotate_irreg.png", "starry_night_translate_irreg.rgb", "starry_night_rotate_irreg.rgb",
+    #           "mona_lisa_translate.png", "mona_lisa_rotate.png", "mona_lisa_translate.rgb", "mona_lisa_rotate.rgb",
+    #           "mona_lisa_translate_irreg.png", "mona_lisa_rotate_irreg.png", "mona_lisa_translate_irreg.rgb", "mona_lisa_rotate_irreg.rgb",
+    #           "sample1_translate.png", "sample1_rotate.png", "sample1_translate.rgb", "sample1_rotate.rgb",
+    #           "sample1_translate_irreg.png", "sample1_rotate_irreg.png", "sample1_translate_irreg.rgb", "sample1_rotate_irreg.rgb",
+    #           "sample2_translate.png", "sample2_rotate.png", "sample2_translate.rgb", "sample2_rotate.rgb",
+    #           "sample2_translate_irreg.png", "sample2_rotate_irreg.png", "sample2_translate_irreg.rgb", "sample2_rotate_irreg.rgb",
+    #           "sample3_translate.png", "sample3_rotate.png", "sample3_translate.rgb", "sample3_rotate.rgb",
+    #           "sample3_translate_irreg.png", "sample3_rotate_irreg.png", "sample3_translate_irreg.rgb", "sample3_rotate_irreg.rgb"]
+    images = ["test_regular_rotate.png", "test_regular_rotate.rgb",
+              "test_regular_translate.png", "test_regular_translate.rgb"]
     # go through all images in the samples folder
-    for image in images:
+    for idx, image in enumerate(images):
         print("Image: ", image)
-        imagePath = "samples/" + image
+        imagePath = "final_test/" + image
         splitup = os.path.splitext(image)
         # get file extension
         fileExtension = splitup[1]
@@ -155,8 +156,9 @@ if __name__ == '__main__':
         cv2.destroyAllWindows()
 
         # # =======Animation Generation=======
-        output_name = os.path.splitext(image)[0] + "_solution.gif"
-        output_path = "outputs/"+output_name
+        base = os.path.splitext(image)[0]
+        output_name = f"{base}_solution_{idx}.gif"
+        output_path = os.path.join("outputs", output_name)
         os.makedirs("outputs", exist_ok=True)
         print(output_name)
         generate_puzzle_animation(tiles, img, output_filename=output_path)
