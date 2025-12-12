@@ -148,7 +148,7 @@ if __name__ == '__main__':
 
         # =======Image Matching===========
         # I added the returning of the canvas so the name of the image can be printed above the picture displayed
-        _, finalImage = simulate_solve_puzzle(tiles, img)
+        assembled_tiles, finalImage = simulate_solve_puzzle(tiles, img)
         name = image + " solution"
         cv2.imshow(name, finalImage)
         # # press q to quite the picture and go through next one
@@ -161,4 +161,4 @@ if __name__ == '__main__':
         output_path = os.path.join("outputs", output_name)
         os.makedirs("outputs", exist_ok=True)
         print(output_name)
-        generate_puzzle_animation(tiles, img, output_filename=output_path)
+        generate_puzzle_animation(assembled_tiles, img, output_filename=output_path)
